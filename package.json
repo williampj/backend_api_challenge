@@ -1,0 +1,19 @@
+{
+  "name": "be-code-challenge",
+  "version": "1.0.0",
+  "description": "GAN Integrity backend code challenge",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "api": "node api.js"
+  },
+  "author": "GAN Integrity",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fs-extra": "7.0.0",
+    "node-fetch": "^2.6.1",
+    "pump": "^3.0.0"
+  }
+}
