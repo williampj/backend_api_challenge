@@ -17,31 +17,26 @@ const areaResults = {};
 // ============ Helper Functions ============
 
 // Loads and parses JSON file
-const getParsedJSONFile = async filePath => {
+const getMapFromJSONFile = async (filePath, key) => {
     try {
         const data = await promises.readFile(filePath);
-        return JSON.parse(data);
+        const addresses = JSON.parse(data);
+        const mappedAddresses = new Map();
+        addresses.forEach(addr => mappedAddresses.set(addr[key], addr))
+
+        return mappedAddresses;
     } catch (err) {
         console.error(err);
     }
 } 
-
-// Converts a nested array to a hash using specified key from the subarray
-const convertArrayToHash = (ary, key) => {
-    const hash = {};
-    ary.forEach(el => hash[el[key]] = el);
-    
-    return hash;
-}
 
 // Converts degrees to radians 
 const degreesToRadiansConverter = (degrees) => degrees * Math.PI / 180.0;
 
 // Calculates distance between two geolocations using the Haversine formula
 const getDistanceBetweenAddresses = (fromGuid, toGuid) => {
-    const { latitude: fromLat, longitude: fromLong } = addressesByGuid[fromGuid];
-    const { latitude: toLat, longitude: toLong } = addressesByGuid[toGuid];
-
+    const { latitude: fromLat, longitude: fromLong } = addresses.get(fromGuid);
+    const { latitude: toLat, longitude: toLong } = addresses.get(toGuid);
     const earthRadius = 6371;
     
     // Degrees converted to radians for use in Haversine equation
@@ -61,13 +56,18 @@ const getDistanceBetweenAddresses = (fromGuid, toGuid) => {
 // ============ API routes ============
 
 // Returns list of cities that match a tag and isActive status from the query
-app.get('/cities-by-tag', async (req, res) => {
+app.get('/cities-by-tag', (req, res) => {
     try {
-        const { tag, isActive } = req.query;
-        const isActiveStr = isActive === 'true';
-    
-        const cities = addresses.filter(address => address.isActive === isActiveStr && address.tags.includes(tag));
+        let { tag, isActive } = req.query;
+        isActive = isActive === 'true';
         
+        const cities = [];
+        for (const [_, address] of addresses) {
+            if (address.isActive === isActive && address.tags.includes(tag)) {
+                cities.push(address);
+            }
+        }
+
         res.status(200).send({ cities });
     } catch (err) {
         console.error(err);
@@ -75,16 +75,15 @@ app.get('/cities-by-tag', async (req, res) => {
 })
 
 // calculates and returns the distance in kilometers between two geolocations
-app.get('/distance', async (req, res) => {
+app.get('/distance', (req, res) => {
     try {
         const { from, to } = req.query;
-    
         // Removes decimals representing less than a meter
         const distance = Math.round(getDistanceBetweenAddresses(from, to) * 1000) / 1000;
     
         res.status(200).send({
-            from: addressesByGuid[from], 
-            to: addressesByGuid[to], 
+            from: addresses.get(from), 
+            to: addresses.get(to),  
             distance, 
             unit: 'km'
         });
@@ -95,28 +94,25 @@ app.get('/distance', async (req, res) => {
 
 // Generates a result of cities within a given distance from an address 
 // Returns a 202 response code and a link to retrieve the results, then computes the results 
-app.get('/area', async (req, res) => {
+app.get('/area', (req, res) => {
     try {
-        const { from, distance } = req.query;
-        
-        if (!addressesByGuid[from]) return res.status(404).send('Resource not found');
+        const { from, distance: targetDistance } = req.query;
         const { headers: { host }, protocol } = req;
-        // In production, a random string would be generated and used to store results
-        // For testing purposes in this case, the string is hardcoded
-        const generatedString = '2152f96f-50c7-4d76-9e18-f7033bd14428';
+        
+        if (!addresses.get(from)) return res.status(404).send('Resource not found');
+        
+        const generatedString = '2152f96f-50c7-4d76-9e18-f7033bd14428'; // Hardcoded for testing purposes
         const resultsUrl = protocol + '://' + host + '/area-result/' + generatedString;
-        areaResults[generatedString] = {}
-        areaResults[generatedString].completed = false; 
+        areaResults[generatedString] = { completed: false };
         
         Promise.resolve(res.status(202).send({ resultsUrl }))
             .then(() => {
                 const cities = [];
-                for (const address of addresses) {
-                    const { guid: dest } = address; 
+                for (const [dest, address] of addresses) {
                     if (from === dest) continue; // avoids calculating distance to self
                     
                     const dist = getDistanceBetweenAddresses(from, dest);    
-                    if (dist <= distance) {
+                    if (dist <= targetDistance) {
                         cities.push(address);
                     } 
                 };
@@ -141,7 +137,6 @@ app.get('/area-result/*', (req, res) => {
         } 
     
         const { completed } = areaResults[key];
-        
         if (!completed) {
             res.status(202).send({});
         }
@@ -155,13 +150,12 @@ app.get('/area-result/*', (req, res) => {
 })
 
 // Streams all cities in the addresses.json file to the client
-app.get('/all-cities', async (req, res) => {
+app.get('/all-cities', (_, res) => {
     try {
         const readStream = createReadStream('./addresses.json');
-        
         pump(readStream, res);
-        
-        readStream.on('error', err => {
+
+        readStream.on('error', () => {
             res.status(500).send('Server error');
         });
     } catch (err) {
@@ -171,8 +165,6 @@ app.get('/all-cities', async (req, res) => {
 
 // Activates the server Server Loads the cities twice into memory (as an array and a hash)
 app.listen(port, async () => {
-    addresses = await getParsedJSONFile(addressPath);
-    addressesByGuid = convertArrayToHash(addresses, 'guid');   
-
+    addresses = await getMapFromJSONFile(addressPath, 'guid');
     console.log(`Listening on port ${port}`);
 })
