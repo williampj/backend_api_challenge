@@ -78,8 +78,7 @@ app.get('/cities-by-tag', (req, res) => {
 app.get('/distance', (req, res) => {
     try {
         const { from, to } = req.query;
-        // Removes decimals representing less than a meter
-        const distance = Math.round(getDistanceBetweenAddresses(from, to) * 1000) / 1000;
+        const distance = Math.round(getDistanceBetweenAddresses(from, to) * 1000) / 1000; // km with scale of 3 
     
         res.status(200).send({
             from: addresses.get(from), 
@@ -119,9 +118,6 @@ app.get('/area', (req, res) => {
                 areaResults[generatedString].cities = cities;
                 areaResults[generatedString].completed = true; 
             })
-            .catch((err) => {
-                console.error(err);
-            }); 
     } catch (err) {
         console.error(err);
     }
@@ -163,7 +159,7 @@ app.get('/all-cities', (_, res) => {
     }
 })
 
-// Activates the server Server Loads the cities twice into memory (as an array and a hash)
+// Activates the server and loads address into memory
 app.listen(port, async () => {
     addresses = await getMapFromJSONFile(addressPath, 'guid');
     console.log(`Listening on port ${port}`);
